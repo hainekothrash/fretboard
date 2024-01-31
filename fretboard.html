@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link href="http://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet"
+        crossorigin="anonymous">
+    <title>指板シミュレータ</title>
+    <style>
+        * {
+            padding: 0;
+            margin: 0;
+        }
+
+        canvas {
+            background: rgb(0, 0, 0);
+            display: block-inline;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>指板シミュレータ</h1>
+        <br>
+        <div class="row">
+            <div id="setting" class="col-3">
+                <h3>楽器</h3>
+                <div id="instrument"></div>
+                <br>
+                <h3>チューニング</h3>
+                <div id="tuning"></div>
+                <br>
+                <h3>調</h3>
+                <div id="key">
+                    <label for="tonic">主音</label><input type="text" id="tonic" value="E"><br>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" id="mode1" name="mode" value="Major" checked>
+                        <label class="form-check-label" for="mode1">メジャー</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" id="mode2" name="mode" value="minor">
+                        <label class="form-check-label" for="mode2">ナチュラルマイナー</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" id="mode3" name="mode" value="Hminor">
+                        <label class="form-check-label" for="mode3">ハーモニックマイナー</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" id="mode4" name="mode" value="Mminor">
+                        <label class="form-check-label" for="mode4">メジャー</label>
+                    </div>
+                </div>
+                <br>
+                <h3>コード</h3>
+                <h4>ダイアトニックコード 3和音</h4>
+                <div id="diatonic3"></div>
+                <h4>ダイアトニックコード 4和音</h4>
+                <div id="diatonic4"></div>
+                <button type="button" id="reload" class="btn btn-primary">再読込</button>
+            </div>
+            <div id="canvas" class="col-9">
+                <canvas id="myCanvas" width="500" height="250"></canvas><br>
+                <button type="button" id="copy" class="btn btn-primary">コピー</button>
+                <button type="button" id="download" class="btn btn-primary">画像ダウンロード</button>
+                <button type="button" id="clear" class="btn btn-primary">クリア</button>
+                <div id="copyArea"></div>
+            </div>
+        </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.10.2/dist/umd/popper.min.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.min.js"
+        crossorigin="anonymous"></script>
+    <script>
+        const noteNameArray = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"];
+        const notePitchMap = { "A": 0, "A#": 1, "Bb": 1, "B": 2, "C": 3, "C#": 4, "Db": 4, "D": 5, "D#": 6, "Eb": 6, "E": 7, "F": 8, "F#": 9, "Gb": 9, "G": 10, "G#": 11, "Ab": 11 };
+        const canvas = document.getElementById("myCanvas");
+        const ctx = canvas.getContext("2d");
+        const width = Math.floor(canvas.width);
+        const height = Math.floor(canvas.height);
+        const frets = 12;
+        let x0 = Math.floor(canvas.width / ((frets + 1) * 2));
+        let dx = Math.floor(canvas.width / (frets + 1));
+        var copyCount = 0;
+
+        window.addEventListener('load', function () {
+            initSettingForm();
+            drawFretBoard();
+        });
+
+        $("input[name='instrument']").click(function () {
+            initSettingForm();
+        });
+        $('#tonic').change(function () {
+            setChordList();
+        });
+        $("input[name='mode']").click(function () {
+            setChordList();
+        });
+        $('#reload').click(function () {
+            drawFretBoard();
+        });
+
+        $('#copy').click(function () {
+            var image = ctx.getImageData(0, 0, width, height);
+            var element = document.createElement("canvas");
+            element.width = width;
+            element.height = height;
+            element.className = "copyCanvas";
+            element.getContext("2d").putImageData(image, 0, 0);
+            document.getElementById("copyArea").appendChild(element);
+        });
+        $('#download').click(function () {
+            let scaleName = getScaleName($("#tonic").val(), $("input[name='mode']:checked").val());
+            let selectedChord = $("input[name='chord']:checked").val();
+            let chordName = $("#label_" + selectedChord).text();
+            let fileName = $("input[name='insturment']:checked").val() + "-" + scaleName + "-" + chordName + ".png";
+
+            let link = document.createElement("a");
+            link.href = canvas.toDataURL("image/png");
+            link.download = fileName;
+            link.click();
+        });
+        $('#clear').click(function () {
+            document.getElementById("copyArea").replaceChildren();
+        });
+
+        function initSettingForm() {
+            setInstrumentList();
+            setTuning();
+            setChordList();
+        }
+
+        function setInstrumentList() {
+            let instInput = document.getElementById("instrument");
+            instInput.innerHTML = getInstInput("6G", "6弦ギター");
+            instInput.innerHTML += getInstInput("7G", "7弦ギター");
+            instInput.innerHTML += getInstInput("8G", "8弦ギター");
+            instInput.innerHTML += getInstInput("4B", "4弦ベース");
+            instInput.innerHTML += getInstInput("5B", "5弦ベース");
+            instInput.innerHTML += getInstInput("6B", "6弦ベース");
+            $("input[name='instrument']").val(["6G"]);
+        }
+
+        function getInstInput(value, label) {
+            return `<div class="form-check">
+                        <input class="form-check-input" type="radio" id="${value}" name="instrument" value="${value}">
+                        <label class="form-check-label" for="${value}">${label}</label>
+                    </div>`;
+        }
+
+        function setTuning() {
+            let type = $("input[name='instrument']:checked").val();
+            let tuningInput = document.getElementById("tuning");
+            switch (type) {
+                case "6G":
+                    tuningInput.innerHTML = getTuningInput(1, "E");
+                    tuningInput.innerHTML += getTuningInput(2, "B");
+                    tuningInput.innerHTML += getTuningInput(3, "G");
+                    tuningInput.innerHTML += getTuningInput(4, "D");
+                    tuningInput.innerHTML += getTuningInput(5, "A");
+                    tuningInput.innerHTML += getTuningInput(6, "E");
+                    break;
+                case "7G":
+                    tuningInput.innerHTML = getTuningInput(1, "E");
+                    tuningInput.innerHTML += getTuningInput(2, "B");
+                    tuningInput.innerHTML += getTuningInput(3, "G");
+                    tuningInput.innerHTML += getTuningInput(4, "D");
+                    tuningInput.innerHTML += getTuningInput(5, "A");
+                    tuningInput.innerHTML += getTuningInput(6, "E");
+                    tuningInput.innerHTML += getTuningInput(7, "B");
+                    break;
+                case "8G":
+                    tuningInput.innerHTML = getTuningInput(1, "E");
+                    tuningInput.innerHTML += getTuningInput(2, "B");
+                    tuningInput.innerHTML += getTuningInput(3, "G");
+                    tuningInput.innerHTML += getTuningInput(4, "D");
+                    tuningInput.innerHTML += getTuningInput(5, "A");
+                    tuningInput.innerHTML += getTuningInput(6, "E");
+                    tuningInput.innerHTML += getTuningInput(7, "B");
+                    tuningInput.innerHTML += getTuningInput(8, "F#");
+                    break;
+                case "4B":
+                    tuningInput.innerHTML = getTuningInput(1, "G");
+                    tuningInput.innerHTML += getTuningInput(2, "D");
+                    tuningInput.innerHTML += getTuningInput(3, "A");
+                    tuningInput.innerHTML += getTuningInput(4, "E");
+                    break;
+                case "5B":
+                    tuningInput.innerHTML = getTuningInput(1, "G");
+                    tuningInput.innerHTML += getTuningInput(2, "D");
+                    tuningInput.innerHTML += getTuningInput(3, "A");
+                    tuningInput.innerHTML += getTuningInput(4, "E");
+                    tuningInput.innerHTML += getTuningInput(5, "B");
+                    break;
+                case "6B":
+                    tuningInput.innerHTML = getTuningInput(1, "C");
+                    tuningInput.innerHTML += getTuningInput(2, "G");
+                    tuningInput.innerHTML += getTuningInput(3, "D");
+                    tuningInput.innerHTML += getTuningInput(4, "A");
+                    tuningInput.innerHTML += getTuningInput(5, "E");
+                    tuningInput.innerHTML += getTuningInput(6, "B");
+                    break;
+            }
+        }
+
+        function setChordList() {
+            let tonic = $("#tonic").val();
+            let mode = $("input[name='mode']:checked").val();
+            let scale = getScaleNotes(getPitch(tonic), mode);
+            let diatonic3 = document.getElementById("diatonic3");
+            let diatonic4 = document.getElementById("diatonic4");
+            switch (mode) {
+                case "Major":
+                    diatonic3.innerHTML = getChordInput(getNoteName(scale[0]), "Major", "d3-1");
+                    diatonic3.innerHTML += getChordInput(getNoteName(scale[1]), "minor", "d3-2");
+                    diatonic3.innerHTML += getChordInput(getNoteName(scale[2]), "minor", "d3-3");
+                    diatonic3.innerHTML += getChordInput(getNoteName(scale[3]), "Major", "d3-4");
+                    diatonic3.innerHTML += getChordInput(getNoteName(scale[4]), "Major", "d3-5");
+                    diatonic3.innerHTML += getChordInput(getNoteName(scale[5]), "minor", "d3-6");
+                    diatonic3.innerHTML += getChordInput(getNoteName(scale[6]), "minorF5", "d3-7");
+
+                    diatonic4.innerHTML = getChordInput(getNoteName(scale[0]), "Major7", "d4-1");
+                    diatonic4.innerHTML += getChordInput(getNoteName(scale[1]), "minor7", "d4-2");
+                    diatonic4.innerHTML += getChordInput(getNoteName(scale[2]), "minor7", "d4-3");
+                    diatonic4.innerHTML += getChordInput(getNoteName(scale[3]), "Major7", "d4-4");
+                    diatonic4.innerHTML += getChordInput(getNoteName(scale[4]), "7th", "d4-5");
+                    diatonic4.innerHTML += getChordInput(getNoteName(scale[5]), "minor7", "d4-6");
+                    diatonic4.innerHTML += getChordInput(getNoteName(scale[6]), "minor7F5", "d4-7");
+                    break;
+                case "minor":
+                    diatonic3.innerHTML = getChordInput(getNoteName(scale[0]), "minor", "d3-1");
+                    diatonic3.innerHTML += getChordInput(getNoteName(scale[1]), "minorF5", "d3-2");
+                    diatonic3.innerHTML += getChordInput(getNoteName(scale[2]), "Major", "d3-3");
+                    diatonic3.innerHTML += getChordInput(getNoteName(scale[3]), "minor", "d3-4");
+                    diatonic3.innerHTML += getChordInput(getNoteName(scale[4]), "minor", "d3-5");
+                    diatonic3.innerHTML += getChordInput(getNoteName(scale[5]), "Major", "d3-6");
+                    diatonic3.innerHTML += getChordInput(getNoteName(scale[6]), "Major", "d3-7");
+                    break;
+                case "Hminor":
+                    break;
+                case "Mminor":
+                    break;
+            }
+            $("input[name='chord']").val(["d3-1"]);
+
+            $("input[name='chord']").click(function () {
+                drawFretBoard();
+            });
+        }
+
+        function getScaleName(tonic, mode) {
+            var name = tonic;
+            switch (mode) {
+                case "Major":
+                    name += " Major";
+                    break;
+                case "minor":
+                    name += " Natural Minor";
+                    break;
+                case "Hminor":
+                    name += " Harmonic Minor";
+                    break;
+                case "Mminor":
+                    name += " Melodic Minor";
+                    break;
+            }
+            return name;
+        }
+
+        function getChordName(key, type) {
+            switch (type) {
+                case "Major":
+                    return key;
+                case "7th":
+                    return key + "7";
+                case "Major7":
+                    return key + "M7";
+                case "minor":
+                    return key + "m";
+                case "minorF5":
+                    return key + "m♭5";
+                case "minor7":
+                    return key + "m7";
+                case "minor7F5":
+                    return key + "m7♭5";
+                case "minorM7":
+                    return key + "mM7";
+            }
+        }
+
+        function getTuningInput(str, pitch) {
+            return `<label for='str${str}'>${str}弦</label><input type='text' id='str${str}' value='${pitch}'><br>`;
+        }
+
+        function getChordInput(key, type, position) {
+            let chordName = getChordName(key, type);
+            return `<div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" id="${position}" name="chord" value="${position}">
+                        <label class="form-check-label" for="${position}" id="label_${position}">${chordName}</label>
+                        <input type="hidden" id="key_${position}" value="${key}">
+                        <input type="hidden" id="type_${position}" value="${type}">
+                    </div>`;
+        }
+
+        function drawFretBoard() {
+            let strings = parseInt($("input[name='instrument']:checked").val().slice(0, 1));
+            y0 = Math.floor(canvas.height / (strings + 1));
+            dy = Math.floor(canvas.height / (strings + 1));
+
+            let tonic = $('#tonic').val();
+            let mode = $("input[name='mode']:checked").val();
+            var showScale = tonic.length > 0 && mode.length > 0;
+            let scale = showScale ? getScaleNotes(getPitch(tonic), mode) : [];
+            let selectedChord = $("input[name='chord']:checked").val();
+            let chordKey = $('#key_' + selectedChord).val();
+            let type = $('#type_' + selectedChord).val();
+            var showChord = chordKey.length > 0 && type.length > 0;
+            let chordNotes = getChordNotes(getPitch(chordKey), type);
+
+            let scaleName = getScaleName(tonic, mode);
+            let chordName = $('#label_' + selectedChord).text();
+
+            // 初期化
+            ctx.reset();
+            ctx.beginPath();
+
+            // スケール、コード名を表示
+            ctx.fillStyle = "#FFF";
+            ctx.font = "20px serif";
+            ctx.fillText(scaleName + "/" + chordName, 5, 20);
+
+            // グリッドを描画
+            for (var i = 0; i < strings; i++) {
+                ctx.moveTo(x0, y0 + (dy * i));
+                ctx.lineTo(x0 + (dx * frets), y0 + (dy * i));
+            }
+            for (var i = 0; i <= frets; i++) {
+                ctx.moveTo(x0 + (dx * i), y0);
+                ctx.lineTo(x0 + (dx * i), y0 + (dy * (strings - 1)));
+            }
+            ctx.strokeStyle = "#FFF";
+            ctx.stroke();
+
+            // 音名を描画
+            for (var i = 1; i <= strings; i++) {
+                let tuning = $('#str' + i).val();
+                if (showScale) {
+                    for (var j = 0; j <= frets; j++) {
+                        var note = (getPitch(tuning) + j) % 12;
+                        if (scale.includes(note)) {
+                            showNote(i, j, getNoteName(note));
+                        }
+                    }
+                }
+                if (showChord) {
+                    for (var j = 0; j <= frets; j++) {
+                        var note = (getPitch(tuning) + j) % 12;
+                        if (chordNotes.includes(note)) {
+                            showEmphasizedNote(i, j, getNoteName(note));
+                        }
+                    }
+                }
+                if (!showScale && !showChord) {
+                    showNote(i, 0, tuning);
+                }
+            }
+        }
+        function showNote(str, fret, name) {
+            showColoredNote(str, fret, name, "#222", "#FFF");
+        }
+
+        function showEmphasizedNote(str, fret, name) {
+            showColoredNote(str, fret, name, "#222", "#F5DF4D");
+        }
+
+        function showColoredNote(str, fret, name, color, bgColor) {
+            var x = x0 + (dx * fret);
+            var y = y0 + (dy * (str - 1));
+            ctx.beginPath();
+            ctx.arc(x, y, dx * 2 / 5, 0, Math.PI * 2);
+            ctx.fillStyle = bgColor;
+            ctx.fill();
+            ctx.fillStyle = color;
+            if (name.length == 1) {
+                ctx.font = '12px serif';
+                ctx.fillText(name, x - 4, y + 4, dx);
+            } else {
+                ctx.font = '11px serif';
+                ctx.fillText(name, x - 7, y + 4, dx);
+            }
+        }
+
+        function getNoteName(num) {
+            return noteNameArray[num];
+        }
+
+        function getPitch(name) {
+            return name in notePitchMap ? notePitchMap[name] : undefined;
+        }
+
+        function getScaleNotes(pitch, mode) {
+            switch (mode) {
+                case "Major":
+                    return getNotesFromRanges(pitch, [0, 2, 4, 5, 7, 9, 11]);
+                case "minor":
+                    return getNotesFromRanges(pitch, [0, 2, 3, 5, 7, 8, 10]);
+                case "Hminor":
+                    return getNotesFromRanges(pitch, [0, 2, 3, 5, 7, 8, 11]);
+                case "Mminor":
+                    return getNotesFromRanges(pitch, []);
+            }
+        }
+
+        function getChordNotes(pitch, type) {
+            switch (type) {
+                case "Major":
+                    return getNotesFromRanges(pitch, [0, 4, 7]);
+                case "7th":
+                    return getNotesFromRanges(pitch, [0, 4, 7, 10]);
+                case "Major7":
+                    return getNotesFromRanges(pitch, [0, 4, 7, 11]);
+                case "minor":
+                    return getNotesFromRanges(pitch, [0, 3, 7]);
+                case "minorF5":
+                    return getNotesFromRanges(pitch, [0, 3, 6]);
+                case "minor7":
+                    return getNotesFromRanges(pitch, [0, 3, 7, 10]);
+                case "minor7F5":
+                    return getNotesFromRanges(pitch, [0, 3, 6, 10]);
+                case "minorM7":
+                    return getNotesFromRanges(pitch, [0, 3, 7, 11]);
+            }
+        }
+
+        function getNotesFromRanges(pitch, ranges) {
+            var notes = [];
+            for (var i = 0; i < ranges.length; i++) {
+                notes[i] = (pitch + ranges[i]) % 12;
+            }
+            return notes;
+        }
+
+        function getHex(num) {
+            return ('00' + Math.floor(num).toString(16).slice(-2));
+        }
+
+        function getColorCode(x, y, z) {
+            return "#" + getHex(x) + getHex(y) + getHex(z);
+        }
+    </script>
+</body>
+
+</html>
